@@ -42,6 +42,22 @@ void QAndroidPlatformAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *
         auto *announcementEvent = static_cast<QAccessibleAnnouncementEvent *>(event);
         QtAndroidAccessibility::notifyAnnouncementEvent(announcementEvent->uniqueId(),
                                                         announcementEvent->message());
+    } else if (event->type() == QAccessible::TextInserted) {
+        auto *textEvent = static_cast<QAccessibleTextInsertEvent *>(event);
+        QtAndroidAccessibility::notifyTextChanged(textEvent->uniqueId(),
+                                                  textEvent->changePosition(),
+                                                  textEvent->textInserted(), QString());
+    } else if (event->type() == QAccessible::TextRemoved) {
+        auto *textEvent = static_cast<QAccessibleTextRemoveEvent *>(event);
+        QtAndroidAccessibility::notifyTextChanged(textEvent->uniqueId(),
+                                                  textEvent->changePosition(),
+                                                  QString(), textEvent->textRemoved());
+    } else if (event->type() == QAccessible::TextUpdated) {
+        auto *textEvent = static_cast<QAccessibleTextUpdateEvent *>(event);
+        QtAndroidAccessibility::notifyTextChanged(textEvent->uniqueId(),
+                                                  textEvent->changePosition(),
+                                                  textEvent->textInserted(),
+                                                  textEvent->textRemoved());
     }
 }
 

@@ -309,6 +309,35 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
         });
     }
 
+    void notifyTextChanged(int viewId, String text, String beforeText,
+                           int fromIndex, int addedCount, int removedCount)
+    {
+        QtNative.runAction(() -> {
+            if (m_view == null || m_manager == null || !m_manager.isEnabled())
+                return;
+
+            if (viewId == INVALID_ID) {
+                Log.w(TAG, "notifyTextChanged() for invalid view");
+                return;
+            }
+
+            // A TYPE_VIEW_TEXT_CHANGED event carrying {text, beforeText, fromIndex,
+            // addedCount, removedCount} is what lets TalkBack speak the characters
+            // a user types or deletes in an editable field.
+            final AccessibilityEvent event =
+                    obtainAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED);
+            event.setSource(m_view, viewId);
+            event.setClassName(getNodeForVirtualViewId(viewId).getClassName());
+            event.setPackageName(m_view.getContext().getPackageName());
+            event.getText().add(text);
+            event.setBeforeText(beforeText);
+            event.setFromIndex(fromIndex);
+            event.setAddedCount(addedCount);
+            event.setRemovedCount(removedCount);
+            sendAccessibilityEvent(event);
+        });
+    }
+
     void sendEventForVirtualViewId(int virtualViewId, int eventType)
     {
         final AccessibilityEvent event = getEventForVirtualViewId(virtualViewId, eventType);

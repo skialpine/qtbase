@@ -35,6 +35,7 @@ namespace QtAndroidAccessibility
     static jmethodID m_setCheckedMethodID = 0;
     static jmethodID m_setClickableMethodID = 0;
     static jmethodID m_setContentDescriptionMethodID = 0;
+    static jmethodID m_setTextMethodID = 0;
     static jmethodID m_setEditableMethodID = 0;
     static jmethodID m_setEnabledMethodID = 0;
     static jmethodID m_setFocusableMethodID = 0;
@@ -178,6 +179,30 @@ namespace QtAndroidAccessibility
     void notifyAnnouncementEvent(uint accessibilityObjectId, const QString &message)
     {
         QtAndroid::notifyAnnouncementEvent(accessibilityObjectId, message);
+    }
+
+    void notifyTextChanged(uint accessibilityObjectId, int position,
+                           const QString &inserted, const QString &removed)
+    {
+        QAccessibleInterface *iface = interfaceFromId(accessibilityObjectId);
+        if (!iface || !iface->isValid())
+            return;
+        QAccessibleTextInterface *textIface = iface->textInterface();
+        if (!textIface)
+            return;
+
+        // Current (post-edit) text, and the text as it was before this edit,
+        // reconstructed by undoing the insertion and restoring the removal.
+        // TalkBack uses {text, beforeText, fromIndex, added, removed} to work out
+        // which characters changed and echo them.
+        const QString after = textIface->text(0, textIface->characterCount());
+        QString before = after;
+        if (position >= 0 && position <= before.size()) {
+            before.remove(position, inserted.size());
+            before.insert(position, removed);
+        }
+        QtAndroid::notifyTextChanged(accessibilityObjectId, after, before, position,
+                                     int(inserted.size()), int(removed.size()));
     }
 
     static QVarLengthArray<int, 8> childIdListForAccessibleObject_helper(int objectId)
@@ -678,6 +703,7 @@ namespace QtAndroidAccessibility
         QAccessible::Role role;
         QStringList actions;
         QString description;
+        QString text;
         QString identifier;
         bool hasTextSelection = false;
         int selectionStart = 0;
@@ -705,6 +731,11 @@ namespace QtAndroidAccessibility
                 info.hasTextSelection = true;
                 textIface->selection(0, &info.selectionStart, &info.selectionEnd);
             }
+            // For editable nodes, capture the actual text content so it can be
+            // exposed via setText() (TalkBack reads an EditText's text, not its
+            // contentDescription, to track the caret and echo edits).
+            if (info.state.editable && textIface)
+                info.text = textIface->text(0, textIface->characterCount());
             QAccessibleValueInterface *valueInterface = iface->valueInterface();
             if (valueInterface) {
                 info.hasValue = true;
@@ -806,8 +837,17 @@ namespace QtAndroidAccessibility
         // try to fill in the text property, this is what the screen reader reads
         jstring jdesc = env->NewString((jchar*)info.description.constData(),
                                        (jsize)info.description.size());
-        //CALL_METHOD(node, "setText", "(Ljava/lang/CharSequence;)V", jdesc)
         env->CallVoidMethod(node, m_setContentDescriptionMethodID, jdesc);
+
+        // Editable nodes additionally expose their content via setText(): TalkBack
+        // reads an EditText's text (not its contentDescription) to track the caret
+        // and echo per-character edits. Without it the field is treated as empty.
+        if (info.state.editable && m_setTextMethodID) {
+            jstring jtext = env->NewString((jchar*)info.text.constData(),
+                                           (jsize)info.text.size());
+            env->CallVoidMethod(node, m_setTextMethodID, jtext);
+            env->DeleteLocalRef(jtext);
+        }
 
         QJniObject(node).callMethod<void>("setViewIdResourceName", info.identifier);
 
@@ -859,6 +899,7 @@ namespace QtAndroidAccessibility
         GET_AND_CHECK_STATIC_METHOD(m_setCheckedMethodID, nodeInfoClass, "setChecked", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setClickableMethodID, nodeInfoClass, "setClickable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setContentDescriptionMethodID, nodeInfoClass, "setContentDescription", "(Ljava/lang/CharSequence;)V");
+        GET_AND_CHECK_STATIC_METHOD(m_setTextMethodID, nodeInfoClass, "setText", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEditableMethodID, nodeInfoClass, "setEditable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEnabledMethodID, nodeInfoClass, "setEnabled", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setFocusableMethodID, nodeInfoClass, "setFocusable", "(Z)V");
