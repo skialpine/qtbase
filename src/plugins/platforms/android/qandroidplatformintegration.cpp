@@ -183,6 +183,7 @@ QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &para
 #endif
 {
     Q_UNUSED(paramList);
+    qDebug("[DecenzaQPA] patched qtforandroid plugin active (a11y QTBUG-118858+QTBUG-145786)");
     m_androidPlatformNativeInterface = new QAndroidPlatformNativeInterface();
 
 #if QT_CONFIG(egl)
