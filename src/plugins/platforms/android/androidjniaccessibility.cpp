@@ -6,6 +6,7 @@
 #include "androidjnimain.h"
 #include "qandroidplatformintegration.h"
 #include "qandroidplatformwindow.h"
+#include "qandroidinputcontext.h"
 #include "qpa/qplatformaccessibility.h"
 #include <QtGui/private/qaccessiblebridgeutils_p.h>
 #include "qguiapplication.h"
@@ -359,8 +360,16 @@ namespace QtAndroidAccessibility
         const auto& actionNames = iface->actionInterface()->actionNames();
 
         if (actionNames.contains(QAccessibleActionInterface::setFocusAction())) {
-            invokeActionOnInterfaceInMainThread(iface->actionInterface(),
-                                                QAccessibleActionInterface::setFocusAction());
+            QAccessibleActionInterface *actionInterface = iface->actionInterface();
+            // Suppress keyboard activation during accessibility focus navigation.
+            QMetaObject::invokeMethod(qApp, [actionInterface]() {
+                auto *inputContext = QAndroidInputContext::androidInputContext();
+                if (inputContext)
+                    inputContext->setAccessibilityFocusInProgress(true);
+                actionInterface->doAction(QAccessibleActionInterface::setFocusAction());
+                if (inputContext)
+                    inputContext->setAccessibilityFocusInProgress(false);
+            }, Qt::QueuedConnection);
             return true;
         }
         return false;

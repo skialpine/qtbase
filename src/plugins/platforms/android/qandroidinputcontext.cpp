@@ -535,7 +535,8 @@ void QAndroidInputContext::reset()
     if (qGuiApp->focusObject()) {
         QSharedPointer<QInputMethodQueryEvent> query = focusObjectInputMethodQuery(Qt::ImEnabled);
         if (!query.isNull() && query->value(Qt::ImEnabled).toBool()) {
-            QtAndroidInput::resetSoftwareKeyboard();
+            if (!m_accessibilityFocusInProgress)
+                QtAndroidInput::resetSoftwareKeyboard();
             return;
         }
     }
@@ -935,6 +936,9 @@ bool QAndroidInputContext::isAnimating() const
 
 void QAndroidInputContext::showInputPanel()
 {
+    if (m_accessibilityFocusInProgress)
+        return;
+
     if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
         connect(qGuiApp, SIGNAL(applicationStateChanged(Qt::ApplicationState)), this, SLOT(showInputPanelLater(Qt::ApplicationState)));
         return;
