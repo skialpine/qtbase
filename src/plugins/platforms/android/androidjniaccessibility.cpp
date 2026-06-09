@@ -38,6 +38,7 @@ namespace QtAndroidAccessibility
     static jmethodID m_setClickableMethodID = 0;
     static jmethodID m_setContentDescriptionMethodID = 0;
     static jmethodID m_setTextMethodID = 0;
+    static jmethodID m_setInputTypeMethodID = 0;
     static jmethodID m_setEditableMethodID = 0;
     static jmethodID m_setEnabledMethodID = 0;
     static jmethodID m_setFocusableMethodID = 0;
@@ -853,11 +854,18 @@ namespace QtAndroidAccessibility
         // Editable nodes additionally expose their content via setText(): TalkBack
         // reads an EditText's text (not its contentDescription) to track the caret
         // and echo per-character edits. Without it the field is treated as empty.
-        if (info.state.editable && m_setTextMethodID) {
-            jstring jtext = env->NewString((jchar*)info.text.constData(),
-                                           (jsize)info.text.size());
-            env->CallVoidMethod(node, m_setTextMethodID, jtext);
-            env->DeleteLocalRef(jtext);
+        if (info.state.editable) {
+            if (m_setTextMethodID) {
+                jstring jtext = env->NewString((jchar*)info.text.constData(),
+                                               (jsize)info.text.size());
+                env->CallVoidMethod(node, m_setTextMethodID, jtext);
+                env->DeleteLocalRef(jtext);
+            }
+            // Mark the node as a real text input. Some TalkBack versions suppress
+            // per-character typing echo unless the editable reports an inputType.
+            // 0x1 == android.text.InputType.TYPE_CLASS_TEXT.
+            if (m_setInputTypeMethodID)
+                env->CallVoidMethod(node, m_setInputTypeMethodID, (jint)0x00000001);
         }
 
         QJniObject(node).callMethod<void>("setViewIdResourceName", info.identifier);
@@ -921,6 +929,7 @@ namespace QtAndroidAccessibility
         GET_AND_CHECK_STATIC_METHOD(m_setClickableMethodID, nodeInfoClass, "setClickable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setContentDescriptionMethodID, nodeInfoClass, "setContentDescription", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setTextMethodID, nodeInfoClass, "setText", "(Ljava/lang/CharSequence;)V");
+        GET_AND_CHECK_STATIC_METHOD(m_setInputTypeMethodID, nodeInfoClass, "setInputType", "(I)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEditableMethodID, nodeInfoClass, "setEditable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEnabledMethodID, nodeInfoClass, "setEnabled", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setFocusableMethodID, nodeInfoClass, "setFocusable", "(Z)V");
