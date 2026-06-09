@@ -1069,10 +1069,16 @@ void QAndroidInputContext::notifyTextChangedForAccessibility()
     int prefix = 0;
     while (prefix < minLen && before.at(prefix) == after.at(prefix))
         ++prefix;
+    // Don't split a surrogate pair: fromIndex must be a code-point boundary, or
+    // Android/TalkBack will mis-handle the (non-BMP, e.g. emoji) change.
+    if (prefix > 0 && before.at(prefix - 1).isHighSurrogate())
+        --prefix;
     int suffix = 0;
     while (suffix < minLen - prefix
            && before.at(before.size() - 1 - suffix) == after.at(after.size() - 1 - suffix))
         ++suffix;
+    if (suffix > 0 && before.at(before.size() - suffix).isLowSurrogate())
+        --suffix;
     const int removedCount = int(before.size()) - prefix - suffix;
     const int addedCount = int(after.size()) - prefix - suffix;
 
@@ -1109,6 +1115,11 @@ jboolean QAndroidInputContext::endBatchEdit()
             m_a11yTextEditPending = false;
             notifyTextChangedForAccessibility();
         }
+        // Invalidate the baseline so the next batch re-captures the field's
+        // current text. This keeps the diff correct even when the text changed
+        // outside the IME mutator path between batches (key-event backspace,
+        // cut/paste, or a programmatic edit) — none of which update m_a11yLastText.
+        m_a11yBaselineValid = false;
 #endif
     }
     return JNI_TRUE;

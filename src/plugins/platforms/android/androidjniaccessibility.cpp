@@ -848,6 +848,7 @@ namespace QtAndroidAccessibility
         jstring jdesc = env->NewString((jchar*)info.description.constData(),
                                        (jsize)info.description.size());
         env->CallVoidMethod(node, m_setContentDescriptionMethodID, jdesc);
+        env->DeleteLocalRef(jdesc);
 
         // Editable nodes additionally expose their content via setText(): TalkBack
         // reads an EditText's text (not its contentDescription) to track the caret
