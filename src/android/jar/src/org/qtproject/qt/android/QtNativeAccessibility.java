@@ -22,4 +22,8 @@ class QtNativeAccessibility
     static native boolean scrollBackward(int objectId);
 
     static native boolean populateNode(int objectId, AccessibilityNodeInfo node);
+
+    // Diagnostic: routes the Java-side text-echo result into the Qt log (qDebug),
+    // since logcat is not captured by the app's pullable debug log.
+    static native void logEcho(int passedId, int focusedId, int target, boolean sent);
 }

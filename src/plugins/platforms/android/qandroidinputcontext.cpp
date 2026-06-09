@@ -1044,6 +1044,7 @@ void QAndroidInputContext::markTextEditForAccessibility()
         m_a11yLastText = q.value(Qt::ImSurroundingText).toString();
         m_a11yBaselineValid = true;
     }
+    qDebug("[DecenzaQPA-echo] markEdit baselineLen=%d", int(m_a11yLastText.size()));
 }
 
 void QAndroidInputContext::notifyTextChangedForAccessibility()
@@ -1055,8 +1056,10 @@ void QAndroidInputContext::notifyTextChangedForAccessibility()
     QCoreApplication::sendEvent(m_focusObject, &query);
     const QString after = query.value(Qt::ImSurroundingText).toString();
     const QString before = m_a11yLastText;
-    if (after == before)
+    if (after == before) {
+        qDebug("[DecenzaQPA-echo] no-op (after==before) len=%d", int(after.size()));
         return;
+    }
     m_a11yLastText = after;
 
     // Character-level diff: the common prefix and suffix bound the changed span,

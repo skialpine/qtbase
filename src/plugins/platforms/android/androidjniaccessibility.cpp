@@ -16,6 +16,7 @@
 #include <QtCore/qmath.h>
 #include <QtCore/private/qjnihelpers_p.h>
 #include <QtCore/QJniObject>
+#include <QtCore/QDebug>
 #include <QtGui/private/qhighdpiscaling_p.h>
 
 #include <QtCore/QObject>
@@ -863,6 +864,15 @@ namespace QtAndroidAccessibility
         return true;
     }
 
+    // Diagnostic: surfaces the Java-side text-echo result in the Qt log (qDebug),
+    // which the app persists and can export — unlike Android logcat.
+    static void logEcho(JNIEnv * /*env*/, jobject /*thiz*/, jint passedId, jint focusedId,
+                        jint targetId, jboolean sent)
+    {
+        qDebug("[DecenzaQPA-echo] java passedId=%d focusedId=%d target=%d sent=%d",
+               int(passedId), int(focusedId), int(targetId), int(sent));
+    }
+
     static const JNINativeMethod methods[] = {
         {"setActive","(Z)V",(void*)setActive},
         {"childIdListForAccessibleObject", "(I)[I", (jintArray)childIdListForAccessibleObject},
@@ -876,6 +886,7 @@ namespace QtAndroidAccessibility
         {"focusAction", "(I)Z", (void*)focusAction},
         {"scrollForward", "(I)Z", (void*)scrollForward},
         {"scrollBackward", "(I)Z", (void*)scrollBackward},
+        {"logEcho", "(IIIZ)V", (void*)logEcho},
     };
 
 #define GET_AND_CHECK_STATIC_METHOD(VAR, CLASS, METHOD_NAME, METHOD_SIGNATURE) \

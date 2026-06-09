@@ -320,11 +320,9 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             // focus on, not the input-method focus object id (which may differ).
             final int targetId =
                     (m_focusedVirtualViewId != INVALID_ID) ? m_focusedVirtualViewId : viewId;
-            Log.i(TAG, "[DecenzaQPA-echo] notifyTextChanged passedId=" + viewId
-                    + " focusedId=" + m_focusedVirtualViewId + " target=" + targetId
-                    + " added=" + addedCount + " removed=" + removedCount);
             if (targetId == INVALID_ID) {
-                Log.w(TAG, "notifyTextChanged() with no focused view");
+                // No accessibility-focused node — log to the Qt (pullable) log.
+                QtNativeAccessibility.logEcho(viewId, m_focusedVirtualViewId, targetId, false);
                 return;
             }
 
@@ -341,7 +339,13 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             event.setFromIndex(fromIndex);
             event.setAddedCount(addedCount);
             event.setRemovedCount(removedCount);
-            sendAccessibilityEvent(event);
+
+            final ViewGroup group = (m_view.getParent() instanceof ViewGroup)
+                    ? (ViewGroup) m_view.getParent() : null;
+            final boolean sent =
+                    group != null && group.requestSendAccessibilityEvent(m_view, event);
+            // Route the result into the Qt (pullable) log; logcat isn't exported.
+            QtNativeAccessibility.logEcho(viewId, m_focusedVirtualViewId, targetId, sent);
         });
     }
 
