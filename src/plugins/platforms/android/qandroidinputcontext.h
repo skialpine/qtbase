@@ -135,6 +135,10 @@ private:
     // QAccessible text-change events on the input-method path, so we generate
     // them here at the platform IME chokepoint.
     void notifyTextChangedForAccessibility();
+    // Called from the real IME mutators (commit/compose/delete) to flag a
+    // pending user edit and lazily capture the pre-edit text baseline. Gating
+    // the announcement on this flag avoids firing on focus-time batch edits.
+    void markTextEditForAccessibility();
 #endif
 
 private:
@@ -150,7 +154,9 @@ private:
     bool m_fullScreenMode;
     bool m_accessibilityFocusInProgress = false;
 #if QT_CONFIG(accessibility)
-    QString m_a11yLastText;  // last text seen by notifyTextChangedForAccessibility()
+    QString m_a11yLastText;       // pre-edit text baseline for the diff
+    bool m_a11yTextEditPending = false;  // a real IME edit happened this batch
+    bool m_a11yBaselineValid = false;    // m_a11yLastText captured for this focus
 #endif
 };
 Q_DECLARE_OPERATORS_FOR_FLAGS(QAndroidInputContext::HandleModes)

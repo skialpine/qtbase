@@ -1019,20 +1019,33 @@ void QAndroidInputContext::setFocusObject(QObject *object)
         m_focusObject = object;
         reset();
 #if QT_CONFIG(accessibility)
-        // Re-seed the accessibility text baseline so the first edit on the new
-        // field diffs against its current contents (not the previous field's).
+        // Invalidate the accessibility text baseline; it is (re)captured lazily
+        // on the first real edit (markTextEditForAccessibility()), so focus
+        // changes do not query or fire anything.
+        m_a11yBaselineValid = false;
+        m_a11yTextEditPending = false;
         m_a11yLastText.clear();
-        if (m_focusObject) {
-            QInputMethodQueryEvent q(Qt::ImSurroundingText);
-            QCoreApplication::sendEvent(m_focusObject, &q);
-            m_a11yLastText = q.value(Qt::ImSurroundingText).toString();
-        }
 #endif
     }
     updateSelectionHandles();
 }
 
 #if QT_CONFIG(accessibility)
+void QAndroidInputContext::markTextEditForAccessibility()
+{
+    if (!QAccessible::isActive() || !m_focusObject)
+        return;
+    m_a11yTextEditPending = true;
+    // Capture the pre-edit text once per focus, before the edit is applied, so
+    // the post-edit diff in notifyTextChangedForAccessibility() is accurate.
+    if (!m_a11yBaselineValid) {
+        QInputMethodQueryEvent q(Qt::ImSurroundingText);
+        QCoreApplication::sendEvent(m_focusObject, &q);
+        m_a11yLastText = q.value(Qt::ImSurroundingText).toString();
+        m_a11yBaselineValid = true;
+    }
+}
+
 void QAndroidInputContext::notifyTextChangedForAccessibility()
 {
     if (!QAccessible::isActive() || !m_focusObject)
@@ -1045,10 +1058,6 @@ void QAndroidInputContext::notifyTextChangedForAccessibility()
     if (after == before)
         return;
     m_a11yLastText = after;
-
-    QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(m_focusObject);
-    if (!iface)
-        return;
 
     // Character-level diff: the common prefix and suffix bound the changed span,
     // giving TalkBack {fromIndex, addedCount, removedCount} to echo just the
@@ -1064,8 +1073,17 @@ void QAndroidInputContext::notifyTextChangedForAccessibility()
     const int removedCount = int(before.size()) - prefix - suffix;
     const int addedCount = int(after.size()) - prefix - suffix;
 
-    QtAndroid::notifyTextChanged(QAccessible::uniqueId(iface), after, before,
-                                 prefix, addedCount, removedCount);
+    // Resolve the input-focus object's accessible id (logged for diagnosis — it
+    // may differ from the node TalkBack has a11y focus on; the Java side targets
+    // the focused virtual view, not this id).
+    uint uid = 0;
+    if (QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(m_focusObject))
+        uid = QAccessible::uniqueId(iface);
+
+    qDebug("[DecenzaQPA-echo] fire focusObjUid=%u from=%d added=%d removed=%d afterLen=%d",
+           uid, prefix, addedCount, removedCount, int(after.size()));
+
+    QtAndroid::notifyTextChanged(uid, after, before, prefix, addedCount, removedCount);
 }
 #endif
 
@@ -1081,10 +1099,13 @@ jboolean QAndroidInputContext::endBatchEdit()
         focusObjectStartComposing();
         updateCursorPosition();
 #if QT_CONFIG(accessibility)
-        // Every IME text mutation (commit/compose/delete) funnels through a
-        // BatchEditLock, so this is the one place to announce the change to
-        // TalkBack once the edit has been applied.
-        notifyTextChangedForAccessibility();
+        // Announce the change to TalkBack once the edit is applied — but only if
+        // a real IME mutator ran this batch. Focus-time batch edits don't set the
+        // flag, so they no longer fire a (label-clobbering) text-change event.
+        if (m_a11yTextEditPending) {
+            m_a11yTextEditPending = false;
+            notifyTextChangedForAccessibility();
+        }
 #endif
     }
     return JNI_TRUE;
@@ -1103,6 +1124,9 @@ jboolean QAndroidInputContext::commitText(const QString &text, jint newCursorPos
 jboolean QAndroidInputContext::deleteSurroundingText(jint leftLength, jint rightLength)
 {
     BatchEditLock batchEditLock(this);
+#if QT_CONFIG(accessibility)
+    markTextEditForAccessibility();
+#endif
 
     focusObjectStopComposing();
 
@@ -1535,6 +1559,9 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
         return JNI_FALSE;
 
     BatchEditLock batchEditLock(this);
+#if QT_CONFIG(accessibility)
+    markTextEditForAccessibility();
+#endif
 
     const int absoluteCursorPos = getAbsoluteCursorPosition(query);
     int absoluteAnchorPos = getBlockPosition(query) + query->value(Qt::ImAnchorPosition).toInt();

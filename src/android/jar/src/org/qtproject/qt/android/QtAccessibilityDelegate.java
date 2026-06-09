@@ -316,8 +316,15 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             if (m_view == null || m_manager == null || !m_manager.isEnabled())
                 return;
 
-            if (viewId == INVALID_ID) {
-                Log.w(TAG, "notifyTextChanged() for invalid view");
+            // Source the event from the node TalkBack actually has accessibility
+            // focus on, not the input-method focus object id (which may differ).
+            final int targetId =
+                    (m_focusedVirtualViewId != INVALID_ID) ? m_focusedVirtualViewId : viewId;
+            Log.i(TAG, "[DecenzaQPA-echo] notifyTextChanged passedId=" + viewId
+                    + " focusedId=" + m_focusedVirtualViewId + " target=" + targetId
+                    + " added=" + addedCount + " removed=" + removedCount);
+            if (targetId == INVALID_ID) {
+                Log.w(TAG, "notifyTextChanged() with no focused view");
                 return;
             }
 
@@ -326,8 +333,8 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             // a user types or deletes in an editable field.
             final AccessibilityEvent event =
                     obtainAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED);
-            event.setSource(m_view, viewId);
-            event.setClassName(getNodeForVirtualViewId(viewId).getClassName());
+            event.setSource(m_view, targetId);
+            event.setClassName(getNodeForVirtualViewId(targetId).getClassName());
             event.setPackageName(m_view.getContext().getPackageName());
             event.getText().add(text);
             event.setBeforeText(beforeText);
