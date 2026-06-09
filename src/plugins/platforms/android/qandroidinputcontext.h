@@ -129,6 +129,13 @@ private:
     bool focusObjectIsComposing() const;
     void focusObjectStartComposing();
     bool focusObjectStopComposing();
+#if QT_CONFIG(accessibility)
+    // Synthesize an Android TYPE_VIEW_TEXT_CHANGED event from IME edits so
+    // TalkBack echoes typed/deleted characters. QML text items don't emit
+    // QAccessible text-change events on the input-method path, so we generate
+    // them here at the platform IME chokepoint.
+    void notifyTextChangedForAccessibility();
+#endif
 
 private:
     ExtractedText m_extractedText;
@@ -142,6 +149,9 @@ private:
     QTimer m_hideCursorHandleTimer;
     bool m_fullScreenMode;
     bool m_accessibilityFocusInProgress = false;
+#if QT_CONFIG(accessibility)
+    QString m_a11yLastText;  // last text seen by notifyTextChangedForAccessibility()
+#endif
 };
 Q_DECLARE_OPERATORS_FOR_FLAGS(QAndroidInputContext::HandleModes)
 QT_END_NAMESPACE

@@ -21,6 +21,9 @@
 #include <qguiapplication.h>
 #include <qinputmethod.h>
 #include <qsharedpointer.h>
+#if QT_CONFIG(accessibility)
+#include <qaccessible.h>
+#endif
 #include <qthread.h>
 #include <qwindow.h>
 #include <qpa/qplatformwindow.h>
@@ -1015,9 +1018,56 @@ void QAndroidInputContext::setFocusObject(QObject *object)
         focusObjectStopComposing();
         m_focusObject = object;
         reset();
+#if QT_CONFIG(accessibility)
+        // Re-seed the accessibility text baseline so the first edit on the new
+        // field diffs against its current contents (not the previous field's).
+        m_a11yLastText.clear();
+        if (m_focusObject) {
+            QInputMethodQueryEvent q(Qt::ImSurroundingText);
+            QCoreApplication::sendEvent(m_focusObject, &q);
+            m_a11yLastText = q.value(Qt::ImSurroundingText).toString();
+        }
+#endif
     }
     updateSelectionHandles();
 }
+
+#if QT_CONFIG(accessibility)
+void QAndroidInputContext::notifyTextChangedForAccessibility()
+{
+    if (!QAccessible::isActive() || !m_focusObject)
+        return;
+
+    QInputMethodQueryEvent query(Qt::ImSurroundingText);
+    QCoreApplication::sendEvent(m_focusObject, &query);
+    const QString after = query.value(Qt::ImSurroundingText).toString();
+    const QString before = m_a11yLastText;
+    if (after == before)
+        return;
+    m_a11yLastText = after;
+
+    QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(m_focusObject);
+    if (!iface)
+        return;
+
+    // Character-level diff: the common prefix and suffix bound the changed span,
+    // giving TalkBack {fromIndex, addedCount, removedCount} to echo just the
+    // inserted/deleted characters.
+    const int minLen = qMin(before.size(), after.size());
+    int prefix = 0;
+    while (prefix < minLen && before.at(prefix) == after.at(prefix))
+        ++prefix;
+    int suffix = 0;
+    while (suffix < minLen - prefix
+           && before.at(before.size() - 1 - suffix) == after.at(after.size() - 1 - suffix))
+        ++suffix;
+    const int removedCount = int(before.size()) - prefix - suffix;
+    const int addedCount = int(after.size()) - prefix - suffix;
+
+    QtAndroid::notifyTextChanged(QAccessible::uniqueId(iface), after, before,
+                                 prefix, addedCount, removedCount);
+}
+#endif
 
 jboolean QAndroidInputContext::beginBatchEdit()
 {
@@ -1030,6 +1080,12 @@ jboolean QAndroidInputContext::endBatchEdit()
     if (--m_batchEditNestingLevel == 0) { //ending batch edit mode
         focusObjectStartComposing();
         updateCursorPosition();
+#if QT_CONFIG(accessibility)
+        // Every IME text mutation (commit/compose/delete) funnels through a
+        // BatchEditLock, so this is the one place to announce the change to
+        // TalkBack once the edit has been applied.
+        notifyTextChangedForAccessibility();
+#endif
     }
     return JNI_TRUE;
 }
