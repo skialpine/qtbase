@@ -313,8 +313,13 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
                            int fromIndex, int addedCount, int removedCount)
     {
         QtNative.runAction(() -> {
-            if (m_view == null || m_manager == null || !m_manager.isEnabled())
+            if (m_view == null || m_manager == null || !m_manager.isEnabled()) {
+                // Rare by construction (a11y view torn down or TalkBack toggled
+                // off mid-flight) — log so every native "fire" line is paired
+                // with exactly one "java" line in the exported log.
+                QtNativeAccessibility.logEcho(viewId, INVALID_ID, INVALID_ID, false);
                 return;
+            }
 
             // Source the event from the node TalkBack actually has accessibility
             // focus on, not the input-method focus object id (which may differ).

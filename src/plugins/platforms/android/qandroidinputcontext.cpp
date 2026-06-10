@@ -915,14 +915,24 @@ void QAndroidInputContext::update(Qt::InputMethodQueries queries)
     if (query.isNull())
         return;
 #if QT_CONFIG(accessibility)
-    // The editor reports every applied text change here (updateInputMethod with
+    // Qt's editors report every applied text change here (updateInputMethod with
     // ImSurroundingText), including edits that bypass the IME mutators entirely:
     // soft-keyboard backspace delivered as a KEYCODE_DEL key event, hardware
-    // keys, and programmatic changes. Announce those to TalkBack. IME batch
-    // edits are announced from endBatchEdit() — updates arriving while a batch
-    // is open are skipped so each edit is announced exactly once.
-    if ((queries & Qt::ImSurroundingText) && m_batchEditNestingLevel == 0)
-        notifyTextChangedForAccessibility("update");
+    // keys, and programmatic changes. Announce those to TalkBack. Changes that
+    // land while an IME batch is open are deferred to endBatchEdit() via the
+    // pending flag — this also catches batch mutations that don't go through a
+    // marked mutator (e.g. focusObjectStopComposing()'s commit inside
+    // finishComposingText()), so every committed edit is announced exactly once;
+    // the after==before no-op guard absorbs any spurious deferral.
+    if (queries & Qt::ImSurroundingText) {
+        if (m_batchEditNestingLevel == 0) {
+            notifyTextChangedForAccessibility("update");
+        } else if (QAccessible::isActive() && !m_a11yTextEditPending) {
+            m_a11yTextEditPending = true;
+            qDebug("[DecenzaQPA-echo] update deferred to batch end (nesting=%d)",
+                   m_batchEditNestingLevel);
+        }
+    }
 #endif
 #warning TODO extract the needed data from query
 }
@@ -1029,18 +1039,26 @@ void QAndroidInputContext::setFocusObject(QObject *object)
         m_focusObject = object;
         reset();
 #if QT_CONFIG(accessibility)
-        // (Re)capture the text baseline for the new focus object so both the
-        // IME (endBatchEdit) and non-IME (update()) announcement paths diff
-        // against the field's pre-edit content. Capturing fires nothing — the
-        // announcement paths are gated separately.
+        // (Re)capture the text baseline for the new focus object (when
+        // accessibility is active; otherwise just invalidate and let the lazy
+        // fallbacks capture) so both the IME (endBatchEdit) and non-IME
+        // (update()) announcement paths diff against the field's pre-edit
+        // content. Capturing fires nothing — the announcement paths are gated
+        // separately. An unanswered query leaves the baseline invalid so the
+        // baseline-adopt guard handles it instead of diffing against garbage.
         m_a11yTextEditPending = false;
         m_a11yLastText.clear();
         m_a11yBaselineValid = false;
         if (m_focusObject && QAccessible::isActive()) {
             QInputMethodQueryEvent q(Qt::ImSurroundingText);
             QCoreApplication::sendEvent(m_focusObject, &q);
-            m_a11yLastText = q.value(Qt::ImSurroundingText).toString();
-            m_a11yBaselineValid = true;
+            const QVariant v = q.value(Qt::ImSurroundingText);
+            if (v.isValid()) {
+                m_a11yLastText = v.toString();
+                m_a11yBaselineValid = true;
+            }
+            qDebug("[DecenzaQPA-echo] focus baseline len=%d valid=%d",
+                   int(m_a11yLastText.size()), int(m_a11yBaselineValid));
         }
 #endif
     }
@@ -1050,11 +1068,17 @@ void QAndroidInputContext::setFocusObject(QObject *object)
 #if QT_CONFIG(accessibility)
 void QAndroidInputContext::markTextEditForAccessibility()
 {
-    if (!QAccessible::isActive() || !m_focusObject)
+    if (!QAccessible::isActive())
+        return;  // normal non-TalkBack path — never log
+    if (!m_focusObject) {
+        qDebug("[DecenzaQPA-echo] markEdit dropped: focusObject null");
         return;
+    }
     m_a11yTextEditPending = true;
-    // Capture the pre-edit text once per focus, before the edit is applied, so
-    // the post-edit diff in notifyTextChangedForAccessibility() is accurate.
+    // Fallback baseline capture — setFocusObject() captures eagerly, but only
+    // when accessibility was active at focus time (and only if the query was
+    // answered). If it wasn't, capture here before this edit is applied so the
+    // diff in notifyTextChangedForAccessibility() is accurate.
     if (!m_a11yBaselineValid) {
         QInputMethodQueryEvent q(Qt::ImSurroundingText);
         QCoreApplication::sendEvent(m_focusObject, &q);
@@ -1066,8 +1090,13 @@ void QAndroidInputContext::markTextEditForAccessibility()
 
 void QAndroidInputContext::notifyTextChangedForAccessibility(const char *source)
 {
-    if (!QAccessible::isActive() || !m_focusObject)
+    if (!QAccessible::isActive())
+        return;  // normal non-TalkBack path — never log
+    if (!m_focusObject) {
+        // Anomaly (focus transition window): an edit's announcement dies here.
+        qDebug("[DecenzaQPA-echo] %s dropped: focusObject null", source);
         return;
+    }
 
     QInputMethodQueryEvent query(Qt::ImSurroundingText);
     QCoreApplication::sendEvent(m_focusObject, &query);
@@ -1134,10 +1163,12 @@ jboolean QAndroidInputContext::endBatchEdit()
         updateCursorPosition();
 #if QT_CONFIG(accessibility)
         // Announce the change to TalkBack once the edit is applied — but only if
-        // a real IME mutator ran this batch. Focus-time batch edits don't set the
-        // flag, so they no longer fire a (label-clobbering) text-change event.
-        // Text changes that bypass the IME (key events, programmatic edits) are
-        // announced from update() instead, which also keeps the baseline synced.
+        // this batch actually changed text (flag set by the IME mutators, or by
+        // update() observing a mid-batch ImSurroundingText change). Focus-time
+        // batches change nothing, set no flag, and so can't fire a
+        // (label-clobbering) text-change event. Text changes outside a batch
+        // (key events, programmatic edits) are announced from update() directly,
+        // which also keeps the baseline synced.
         if (m_a11yTextEditPending) {
             m_a11yTextEditPending = false;
             notifyTextChangedForAccessibility("batch");

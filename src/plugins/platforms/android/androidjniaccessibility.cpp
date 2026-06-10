@@ -747,9 +747,11 @@ namespace QtAndroidAccessibility
             // For editable nodes, capture the actual text content so it can be
             // exposed via setText() (TalkBack reads an EditText's text, not its
             // contentDescription, to track the caret and echo edits), and the
-            // accessible name so it can be exposed via setHintText() — once a
-            // node presents as a real text input, TalkBack reads the label from
-            // the hint and ignores contentDescription.
+            // accessible name so it can be exposed via setHintText() — the
+            // platform-recommended label channel for editable fields; current
+            // TalkBack versions read a text input's label from the hint and
+            // ignore contentDescription (observed behavior at the time of this
+            // fix — see the populateNode() comment).
             if (info.state.editable) {
                 if (textIface)
                     info.text = textIface->text(0, textIface->characterCount());
@@ -874,9 +876,11 @@ namespace QtAndroidAccessibility
             // 0x1 == android.text.InputType.TYPE_CLASS_TEXT.
             if (m_setInputTypeMethodID)
                 env->CallVoidMethod(node, m_setInputTypeMethodID, (jint)0x00000001);
-            // Expose the field's label as the hint — the channel TalkBack reads
-            // a text input's label from (it ignores contentDescription for real
-            // edit fields, which is why the label went unspoken without this).
+            // Expose the field's label as the hint — current TalkBack versions
+            // read a text input's label from the hint and ignore its
+            // contentDescription, which is why the label went unspoken without
+            // this. contentDescription is still set above for TalkBack versions
+            // that honor it on editables.
             if (m_setHintTextMethodID) {
                 jstring jhint = env->NewString((jchar*)info.hint.constData(),
                                                (jsize)info.hint.size());
@@ -947,6 +951,8 @@ namespace QtAndroidAccessibility
         GET_AND_CHECK_STATIC_METHOD(m_setContentDescriptionMethodID, nodeInfoClass, "setContentDescription", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setTextMethodID, nodeInfoClass, "setText", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setInputTypeMethodID, nodeInfoClass, "setInputType", "(I)V");
+        // setHintText is API 26+, below Qt's API-28 floor, so an unconditional
+        // lookup is safe; gate it like setHeading below if minSdk ever drops.
         GET_AND_CHECK_STATIC_METHOD(m_setHintTextMethodID, nodeInfoClass, "setHintText", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEditableMethodID, nodeInfoClass, "setEditable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEnabledMethodID, nodeInfoClass, "setEnabled", "(Z)V");

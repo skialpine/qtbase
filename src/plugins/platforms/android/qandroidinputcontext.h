@@ -138,7 +138,8 @@ private:
     // tag for the diagnostic log.
     void notifyTextChangedForAccessibility(const char *source);
     // Called from the real IME mutators (commit/compose/delete) to flag a
-    // pending user edit and lazily capture the pre-edit text baseline. Gating
+    // pending user edit and, as a fallback, capture the pre-edit baseline if
+    // setFocusObject() couldn't (accessibility inactive at focus time). Gating
     // the announcement on this flag avoids firing on focus-time batch edits.
     void markTextEditForAccessibility();
 #endif
