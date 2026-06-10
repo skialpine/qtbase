@@ -914,6 +914,16 @@ void QAndroidInputContext::update(Qt::InputMethodQueries queries)
     QSharedPointer<QInputMethodQueryEvent> query = focusObjectInputMethodQuery(queries);
     if (query.isNull())
         return;
+#if QT_CONFIG(accessibility)
+    // The editor reports every applied text change here (updateInputMethod with
+    // ImSurroundingText), including edits that bypass the IME mutators entirely:
+    // soft-keyboard backspace delivered as a KEYCODE_DEL key event, hardware
+    // keys, and programmatic changes. Announce those to TalkBack. IME batch
+    // edits are announced from endBatchEdit() — updates arriving while a batch
+    // is open are skipped so each edit is announced exactly once.
+    if ((queries & Qt::ImSurroundingText) && m_batchEditNestingLevel == 0)
+        notifyTextChangedForAccessibility("update");
+#endif
 #warning TODO extract the needed data from query
 }
 
@@ -1019,12 +1029,19 @@ void QAndroidInputContext::setFocusObject(QObject *object)
         m_focusObject = object;
         reset();
 #if QT_CONFIG(accessibility)
-        // Invalidate the accessibility text baseline; it is (re)captured lazily
-        // on the first real edit (markTextEditForAccessibility()), so focus
-        // changes do not query or fire anything.
-        m_a11yBaselineValid = false;
+        // (Re)capture the text baseline for the new focus object so both the
+        // IME (endBatchEdit) and non-IME (update()) announcement paths diff
+        // against the field's pre-edit content. Capturing fires nothing — the
+        // announcement paths are gated separately.
         m_a11yTextEditPending = false;
         m_a11yLastText.clear();
+        m_a11yBaselineValid = false;
+        if (m_focusObject && QAccessible::isActive()) {
+            QInputMethodQueryEvent q(Qt::ImSurroundingText);
+            QCoreApplication::sendEvent(m_focusObject, &q);
+            m_a11yLastText = q.value(Qt::ImSurroundingText).toString();
+            m_a11yBaselineValid = true;
+        }
 #endif
     }
     updateSelectionHandles();
@@ -1047,7 +1064,7 @@ void QAndroidInputContext::markTextEditForAccessibility()
     qDebug("[DecenzaQPA-echo] markEdit baselineLen=%d", int(m_a11yLastText.size()));
 }
 
-void QAndroidInputContext::notifyTextChangedForAccessibility()
+void QAndroidInputContext::notifyTextChangedForAccessibility(const char *source)
 {
     if (!QAccessible::isActive() || !m_focusObject)
         return;
@@ -1055,9 +1072,17 @@ void QAndroidInputContext::notifyTextChangedForAccessibility()
     QInputMethodQueryEvent query(Qt::ImSurroundingText);
     QCoreApplication::sendEvent(m_focusObject, &query);
     const QString after = query.value(Qt::ImSurroundingText).toString();
+    if (!m_a11yBaselineValid) {
+        // No pre-edit baseline to diff against — adopt the current text and stay
+        // silent rather than announcing a bogus whole-field change.
+        m_a11yLastText = after;
+        m_a11yBaselineValid = true;
+        qDebug("[DecenzaQPA-echo] %s baseline-adopt len=%d", source, int(after.size()));
+        return;
+    }
     const QString before = m_a11yLastText;
     if (after == before) {
-        qDebug("[DecenzaQPA-echo] no-op (after==before) len=%d", int(after.size()));
+        qDebug("[DecenzaQPA-echo] %s no-op len=%d", source, int(after.size()));
         return;
     }
     m_a11yLastText = after;
@@ -1089,8 +1114,8 @@ void QAndroidInputContext::notifyTextChangedForAccessibility()
     if (QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(m_focusObject))
         uid = QAccessible::uniqueId(iface);
 
-    qDebug("[DecenzaQPA-echo] fire focusObjUid=%u from=%d added=%d removed=%d afterLen=%d",
-           uid, prefix, addedCount, removedCount, int(after.size()));
+    qDebug("[DecenzaQPA-echo] %s fire focusObjUid=%u from=%d added=%d removed=%d afterLen=%d",
+           source, uid, prefix, addedCount, removedCount, int(after.size()));
 
     QtAndroid::notifyTextChanged(uid, after, before, prefix, addedCount, removedCount);
 }
@@ -1111,15 +1136,12 @@ jboolean QAndroidInputContext::endBatchEdit()
         // Announce the change to TalkBack once the edit is applied — but only if
         // a real IME mutator ran this batch. Focus-time batch edits don't set the
         // flag, so they no longer fire a (label-clobbering) text-change event.
+        // Text changes that bypass the IME (key events, programmatic edits) are
+        // announced from update() instead, which also keeps the baseline synced.
         if (m_a11yTextEditPending) {
             m_a11yTextEditPending = false;
-            notifyTextChangedForAccessibility();
+            notifyTextChangedForAccessibility("batch");
         }
-        // Invalidate the baseline so the next batch re-captures the field's
-        // current text. This keeps the diff correct even when the text changed
-        // outside the IME mutator path between batches (key-event backspace,
-        // cut/paste, or a programmatic edit) — none of which update m_a11yLastText.
-        m_a11yBaselineValid = false;
 #endif
     }
     return JNI_TRUE;

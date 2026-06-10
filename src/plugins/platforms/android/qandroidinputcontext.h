@@ -130,11 +130,13 @@ private:
     void focusObjectStartComposing();
     bool focusObjectStopComposing();
 #if QT_CONFIG(accessibility)
-    // Synthesize an Android TYPE_VIEW_TEXT_CHANGED event from IME edits so
+    // Synthesize an Android TYPE_VIEW_TEXT_CHANGED event from text edits so
     // TalkBack echoes typed/deleted characters. QML text items don't emit
-    // QAccessible text-change events on the input-method path, so we generate
-    // them here at the platform IME chokepoint.
-    void notifyTextChangedForAccessibility();
+    // QAccessible text-change events on the input path, so we generate them at
+    // the platform chokepoints: endBatchEdit() for IME edits, update() for
+    // everything else (key events, programmatic changes). `source` is a short
+    // tag for the diagnostic log.
+    void notifyTextChangedForAccessibility(const char *source);
     // Called from the real IME mutators (commit/compose/delete) to flag a
     // pending user edit and lazily capture the pre-edit text baseline. Gating
     // the announcement on this flag avoids firing on focus-time batch edits.

@@ -39,6 +39,7 @@ namespace QtAndroidAccessibility
     static jmethodID m_setContentDescriptionMethodID = 0;
     static jmethodID m_setTextMethodID = 0;
     static jmethodID m_setInputTypeMethodID = 0;
+    static jmethodID m_setHintTextMethodID = 0;
     static jmethodID m_setEditableMethodID = 0;
     static jmethodID m_setEnabledMethodID = 0;
     static jmethodID m_setFocusableMethodID = 0;
@@ -715,6 +716,7 @@ namespace QtAndroidAccessibility
         QStringList actions;
         QString description;
         QString text;
+        QString hint;
         QString identifier;
         bool hasTextSelection = false;
         int selectionStart = 0;
@@ -744,9 +746,15 @@ namespace QtAndroidAccessibility
             }
             // For editable nodes, capture the actual text content so it can be
             // exposed via setText() (TalkBack reads an EditText's text, not its
-            // contentDescription, to track the caret and echo edits).
-            if (info.state.editable && textIface)
-                info.text = textIface->text(0, textIface->characterCount());
+            // contentDescription, to track the caret and echo edits), and the
+            // accessible name so it can be exposed via setHintText() — once a
+            // node presents as a real text input, TalkBack reads the label from
+            // the hint and ignores contentDescription.
+            if (info.state.editable) {
+                if (textIface)
+                    info.text = textIface->text(0, textIface->characterCount());
+                info.hint = iface->text(QAccessible::Name);
+            }
             QAccessibleValueInterface *valueInterface = iface->valueInterface();
             if (valueInterface) {
                 info.hasValue = true;
@@ -866,6 +874,15 @@ namespace QtAndroidAccessibility
             // 0x1 == android.text.InputType.TYPE_CLASS_TEXT.
             if (m_setInputTypeMethodID)
                 env->CallVoidMethod(node, m_setInputTypeMethodID, (jint)0x00000001);
+            // Expose the field's label as the hint — the channel TalkBack reads
+            // a text input's label from (it ignores contentDescription for real
+            // edit fields, which is why the label went unspoken without this).
+            if (m_setHintTextMethodID) {
+                jstring jhint = env->NewString((jchar*)info.hint.constData(),
+                                               (jsize)info.hint.size());
+                env->CallVoidMethod(node, m_setHintTextMethodID, jhint);
+                env->DeleteLocalRef(jhint);
+            }
         }
 
         QJniObject(node).callMethod<void>("setViewIdResourceName", info.identifier);
@@ -930,6 +947,7 @@ namespace QtAndroidAccessibility
         GET_AND_CHECK_STATIC_METHOD(m_setContentDescriptionMethodID, nodeInfoClass, "setContentDescription", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setTextMethodID, nodeInfoClass, "setText", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setInputTypeMethodID, nodeInfoClass, "setInputType", "(I)V");
+        GET_AND_CHECK_STATIC_METHOD(m_setHintTextMethodID, nodeInfoClass, "setHintText", "(Ljava/lang/CharSequence;)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEditableMethodID, nodeInfoClass, "setEditable", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setEnabledMethodID, nodeInfoClass, "setEnabled", "(Z)V");
         GET_AND_CHECK_STATIC_METHOD(m_setFocusableMethodID, nodeInfoClass, "setFocusable", "(Z)V");
