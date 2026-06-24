@@ -351,6 +351,34 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
                     group != null && group.requestSendAccessibilityEvent(m_view, event);
             // Route the result into the Qt (pullable) log; logcat isn't exported.
             QtNativeAccessibility.logEcho(viewId, m_focusedVirtualViewId, targetId, sent);
+
+            // Companion caret/selection event. A real EditText fires
+            // TYPE_VIEW_TEXT_SELECTION_CHANGED alongside the text-changed event on
+            // every keystroke, and current TalkBack appears to drive typing echo
+            // off this (read from the input-focused editable) rather than off the
+            // text-changed event whose source isn't the accessibility-focused node
+            // while the soft keyboard is open (issue #1300, log shows focusedId=
+            // INVALID_ID during typing with sent=1 but no speech). Additive: this
+            // is sent after — and independent of — the text-changed event above,
+            // targets the same node id, and never alters or suppresses it. It adds
+            // a second event TalkBack may key typing echo off of; it does not touch
+            // the navigation tree or the existing event's payload.
+            // The selection event's logEcho passes the caret in the first slot so
+            // its log line is distinguishable from the text-changed one above.
+            final int caret = fromIndex + addedCount;
+            final AccessibilityEvent selEvent =
+                    obtainAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED);
+            selEvent.setSource(m_view, targetId);
+            selEvent.setClassName(getNodeForVirtualViewId(targetId).getClassName());
+            selEvent.setPackageName(m_view.getContext().getPackageName());
+            selEvent.getText().add(text);
+            selEvent.setFromIndex(caret);
+            selEvent.setToIndex(caret);
+            selEvent.setItemCount(text != null ? text.length() : 0);
+            selEvent.setCurrentItemIndex(caret);
+            final boolean selSent =
+                    group != null && group.requestSendAccessibilityEvent(m_view, selEvent);
+            QtNativeAccessibility.logEcho(caret, m_focusedVirtualViewId, targetId, selSent);
         });
     }
 

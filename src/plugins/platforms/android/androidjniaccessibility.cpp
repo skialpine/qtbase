@@ -21,6 +21,7 @@
 
 #include <QtCore/QObject>
 #include <QtCore/qpointer.h>
+#include <QtCore/qscopeguard.h>
 #include <QtCore/qvarlengtharray.h>
 
 static const char m_qtTag[] = "Qt A11Y";
@@ -369,9 +370,11 @@ namespace QtAndroidAccessibility
                 auto *inputContext = QAndroidInputContext::androidInputContext();
                 if (inputContext)
                     inputContext->setAccessibilityFocusInProgress(true);
+                const auto resetGuard = qScopeGuard([inputContext] {
+                    if (inputContext)
+                        inputContext->setAccessibilityFocusInProgress(false);
+                });
                 actionInterface->doAction(QAccessibleActionInterface::setFocusAction());
-                if (inputContext)
-                    inputContext->setAccessibilityFocusInProgress(false);
             }, Qt::QueuedConnection);
             return true;
         }

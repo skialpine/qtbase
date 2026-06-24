@@ -67,7 +67,6 @@ public:
     static QAndroidInputContext * androidInputContext();
     bool isValid() const override { return true; }
 
-    bool accessibilityFocusInProgress() const { return m_accessibilityFocusInProgress; }
     void setAccessibilityFocusInProgress(bool inProgress) { m_accessibilityFocusInProgress = inProgress; }
 
     void reset() override;
