@@ -334,11 +334,14 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             // A TYPE_VIEW_TEXT_CHANGED event carrying {text, beforeText, fromIndex,
             // addedCount, removedCount} is what lets TalkBack speak the characters
             // a user types or deletes in an editable field.
+            final CharSequence className = getNodeForVirtualViewId(targetId).getClassName();
+            final String packageName = m_view.getContext().getPackageName();
+
             final AccessibilityEvent event =
                     obtainAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED);
             event.setSource(m_view, targetId);
-            event.setClassName(getNodeForVirtualViewId(targetId).getClassName());
-            event.setPackageName(m_view.getContext().getPackageName());
+            event.setClassName(className);
+            event.setPackageName(packageName);
             event.getText().add(text);
             event.setBeforeText(beforeText);
             event.setFromIndex(fromIndex);
@@ -369,8 +372,8 @@ class QtAccessibilityDelegate extends View.AccessibilityDelegate
             final AccessibilityEvent selEvent =
                     obtainAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED);
             selEvent.setSource(m_view, targetId);
-            selEvent.setClassName(getNodeForVirtualViewId(targetId).getClassName());
-            selEvent.setPackageName(m_view.getContext().getPackageName());
+            selEvent.setClassName(className);
+            selEvent.setPackageName(packageName);
             selEvent.getText().add(text);
             selEvent.setFromIndex(caret);
             selEvent.setToIndex(caret);

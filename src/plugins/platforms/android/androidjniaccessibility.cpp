@@ -186,30 +186,6 @@ namespace QtAndroidAccessibility
         QtAndroid::notifyAnnouncementEvent(accessibilityObjectId, message);
     }
 
-    void notifyTextChanged(uint accessibilityObjectId, int position,
-                           const QString &inserted, const QString &removed)
-    {
-        QAccessibleInterface *iface = interfaceFromId(accessibilityObjectId);
-        if (!iface || !iface->isValid())
-            return;
-        QAccessibleTextInterface *textIface = iface->textInterface();
-        if (!textIface)
-            return;
-
-        // Current (post-edit) text, and the text as it was before this edit,
-        // reconstructed by undoing the insertion and restoring the removal.
-        // TalkBack uses {text, beforeText, fromIndex, added, removed} to work out
-        // which characters changed and echo them.
-        const QString after = textIface->text(0, textIface->characterCount());
-        QString before = after;
-        if (position >= 0 && position <= before.size()) {
-            before.remove(position, inserted.size());
-            before.insert(position, removed);
-        }
-        QtAndroid::notifyTextChanged(accessibilityObjectId, after, before, position,
-                                     int(inserted.size()), int(removed.size()));
-    }
-
     static QVarLengthArray<int, 8> childIdListForAccessibleObject_helper(int objectId)
     {
         QAccessibleInterface *iface = interfaceFromId(objectId);
