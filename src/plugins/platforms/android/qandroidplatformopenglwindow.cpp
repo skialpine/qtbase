@@ -65,7 +65,22 @@ EGLSurface QAndroidPlatformOpenGLWindow::eglSurface(EGLConfig config)
         static constexpr char funcName[] = "QAndroidPlatformOpenGLWindow::eglSurface()";
         QtAndroidPrivate::AndroidDeadlockProtector protector(funcName);
         if (!protector.acquire()) {
-            qFatal("Failed to acquire deadlock protector for %s.", funcName);
+            // Losing the race for the single process-wide protector is not a deadlock —
+            // another subsystem (input method, accessibility, permissions) is merely
+            // mid-call. Skip surface creation for this frame instead of terminating the
+            // process; the Vulkan backend in this same release already takes exactly this
+            // path (qandroidplatformvulkanwindow.cpp returns &m_vkSurface here), and both
+            // callers of eglSurface() handle EGL_NO_SURFACE — makeCurrent() warns and
+            // returns false, QEGLPlatformContext::swapBuffers() skips the swap. A later
+            // frame creates the surface once the protector is free.
+            // Debug, not warning, on purpose: acquire() itself already warns and names
+            // the current holder, so a second warning would only add noise to the log
+            // users attach to bug reports. This line stays as the string that proves a
+            // built plugin actually carries this patch (grep the .so for it).
+            // Upstream fix: https://codereview.qt-project.org/c/qt/qtbase/+/735089
+            // (QTBUG-140490, QTBUG-144207). Drop this once that reaches our Qt version.
+            qCDebug(lcQpaWindow, "[decenza-patch] deadlock protector contended in %s; "
+                                 "skipping surface creation for this frame.", funcName);
             return m_eglSurface;
         }
 
